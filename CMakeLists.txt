@@ -876,7 +876,8 @@ find_package (Boost 1.62 REQUIRED COMPONENTS log_setup log)
 #
 # OpenMP
 #
-find_package (OpenMP)
+# find_package (OpenMP)
+set(OPENMP_FOUND 0)
 
 #
 # fftw3 single precision library
@@ -1364,7 +1365,6 @@ endif (WIN32)
 
 # build a library of package Qt functionality used in Fortran utilities
 add_library (fort_qt STATIC ${fort_qt_CXXSRCS})
-target_link_libraries (fort_qt Qt5::Core)
 
 # build a library of WSJT Qt multimedia components
 add_library (wsjt_qtmm STATIC ${wsjt_qtmm_CXXSRCS} ${wsjt_qtmm_GENUISRCS})
