@@ -786,42 +786,6 @@ set_source_files_properties (lib/filbig.f90 PROPERTIES COMPILE_FLAGS "-Wno-alias
 set_property (SOURCE ${all_C_and_CXXSRCS} APPEND_STRING PROPERTY COMPILE_FLAGS " -include wsjtx_config.h")
 set_property (SOURCE ${all_C_and_CXXSRCS} APPEND PROPERTY OBJECT_DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/wsjtx_config.h)
 
-if (WIN32)
-  # generate the OmniRig COM interface source
-  find_program (DUMPCPP dumpcpp)
-  if (DUMPCPP-NOTFOUND)
-    message (FATAL_ERROR "dumpcpp tool not found")
-  endif (DUMPCPP-NOTFOUND)
-  execute_process (
-    COMMAND ${DUMPCPP} -getfile {4FE359C5-A58F-459D-BE95-CA559FB4F270}
-    OUTPUT_VARIABLE AXSERVER
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-  string (STRIP "${AXSERVER}" AXSERVER)
-  if (NOT AXSERVER)
-    message (FATAL_ERROR "You need to install OmniRig on this computer")
-  endif (NOT AXSERVER)
-  string (REPLACE "\"" "" AXSERVER ${AXSERVER})
-  file (TO_CMAKE_PATH ${AXSERVER} AXSERVERSRCS)
-endif ()
-
-
-#
-# decide on platform specifc packing and fixing up
-#
-if (APPLE)
-  set (WSJTX_BUNDLE_VERSION ${wsjtx_VERSION})
-
-  # make sure CMAKE_INSTALL_PREFIX ends in /
-  string (LENGTH "${CMAKE_INSTALL_PREFIX}" LEN)
-  math (EXPR LEN "${LEN} -1" )
-  string (SUBSTRING "${CMAKE_INSTALL_PREFIX}" ${LEN} 1 ENDCH)
-  if (NOT "${ENDCH}" STREQUAL "/")
-    set (CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}/")
-  endif ()
-endif (APPLE)
-
-
 #
 # find some useful tools
 #
@@ -868,10 +832,10 @@ endif ()
 #
 # Boost
 #
-if (WIN32)
-  set (Boost_USE_STATIC_LIBS OFF)
-endif ()
-find_package (Boost 1.62 REQUIRED COMPONENTS log_setup log)
+#if (WIN32)
+#  set (Boost_USE_STATIC_LIBS OFF)
+#endif ()
+#find_package (Boost 1.62 REQUIRED COMPONENTS log_setup log)
 
 #
 # OpenMP
@@ -883,31 +847,6 @@ set(OPENMP_FOUND 0)
 # fftw3 single precision library
 #
 find_package (FFTW3 COMPONENTS single threads REQUIRED)
-
-#
-# hamlib setup
-#
-find_package (Hamlib REQUIRED)
-find_program (RIGCTL_EXE rigctl)
-find_program (RIGCTLD_EXE rigctld)
-find_program (RIGCTLCOM_EXE rigctlcom)
-
-check_type_size (CACHE_ALL HAMLIB_OLD_CACHING)
-check_symbol_exists (rig_set_cache_timeout_ms "hamlib/rig.h" HAVE_HAMLIB_CACHING)
-
-find_package (Usb REQUIRED)
-
-#
-# Qt5 setup
-#
-
-# Widgets finds its own dependencies.
-find_package (Qt5 COMPONENTS Widgets SerialPort Multimedia PrintSupport Sql LinguistTools REQUIRED)
-
-if (WIN32)
-  add_definitions (-DQT_NEEDS_QTMAIN)
-  find_package (Qt5AxContainer REQUIRED)
-endif (WIN32)
 
 #
 # Library building setup
@@ -929,21 +868,12 @@ set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall -Wextra -fexceptions -frt
 
 if (NOT APPLE)
   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-pragmas")
-  if (${OPENMP_FOUND})
-    if (OpenMP_C_FLAGS)
-      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_C_FLAGS}")
-      set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-    endif ()
-  endif ()
   set (CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -fdata-sections -ffunction-sections")
   set (CMAKE_C_FLAGS_MINSIZEREL "${CMAKE_C_FLAGS_MINSIZEREL} -fdata-sections -ffunction-sections")
   set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -fdata-sections -ffunction-sections")
   set (CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} -fdata-sections -ffunction-sections")
 endif (NOT APPLE)
 
-if (WIN32)
-  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
-endif (WIN32)
 if (APPLE AND ${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -stdlib=libc++")
 else ()
@@ -1041,39 +971,6 @@ set (CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
 # directories outside of the build tree to the install RPATH
 set (CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-# the RPATH to be used when installing, but only if it's not a system
-# directory
-# list (FIND CMAKE_PLATFORM_IMPLICIT_LINK_DIRECTORIES "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}" isSystemDir)
-# if ("${isSystemDir}" STREQUAL "-1")
-#   set (CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
-# endif ("${isSystemDir}" STREQUAL "-1")
-
-set (QT_NEED_RPATH FALSE)
-if (NOT "${QT_LIBRARY_DIR}" STREQUAL "/lib" AND NOT "${QT_LIBRARY_DIR}" STREQUAL "/usr/lib" AND NOT "${QT_LIBRARY_DIR}" STREQUAL "/lib64" AND NOT "${QT_LIBRARY_DIR}" STREQUAL "/usr/lib64")
-  set (QT_NEED_RPATH TRUE)
-endif ()
-
-#
-# stuff only qmake can tell us
-#
-get_target_property (QMAKE_EXECUTABLE Qt5::qmake LOCATION)
-get_target_property (LCONVERT_EXECUTABLE Qt5::lconvert LOCATION)
-function (QUERY_QMAKE VAR RESULT)
-  exec_program (${QMAKE_EXECUTABLE} ARGS "-query ${VAR}" RETURN_VALUE return_code OUTPUT_VARIABLE output)
-  if (NOT return_code)
-    file (TO_CMAKE_PATH "${output}" output)
-    set (${RESULT} ${output} PARENT_SCOPE)
-  endif (NOT return_code)
-  message (STATUS "Asking qmake for ${RESULT} and got ${output}")
-endfunction (QUERY_QMAKE)
-
-query_qmake (QT_INSTALL_PLUGINS QT_PLUGINS_DIR)
-query_qmake (QT_INSTALL_TRANSLATIONS QT_TRANSLATIONS_DIR)
-query_qmake (QT_INSTALL_IMPORTS QT_IMPORTS_DIR)
-query_qmake (QT_HOST_DATA QT_DATA_DIR)
-set (QT_MKSPECS_DIR ${QT_DATA_DIR}/mkspecs)
-
-# project definitions
 add_definitions (-DQT5 -DCMAKE_BUILD -DBIGSYM=1 -DBOOST_ALL_DYN_LINK)
 if (CMAKE_HOST_UNIX)
   add_definitions (-DUNIX)
@@ -1081,149 +978,13 @@ elseif (CMAKE_HOST_WIN32)
   add_definitions (-DWIN32)
 endif ()
 
-#
-# sub-directories
-#
-if (EXISTS ${CMAKE_SOURCE_DIR}/samples AND IS_DIRECTORY ${CMAKE_SOURCE_DIR}/samples)
-  add_subdirectory (samples)
-endif ()
-if (WSJT_GENERATE_DOCS)
-  add_subdirectory (doc)
-endif (WSJT_GENERATE_DOCS)
-if (EXISTS ${CMAKE_SOURCE_DIR}/tests AND IS_DIRECTORY ${CMAKE_SOURCE_DIR}/tests)
-  add_subdirectory (tests)
-endif ()
-
 # build a library of package functionality (without and optionally with OpenMP support)
 add_library (wsjt_cxx STATIC ${wsjt_CSRCS} ${wsjt_CXXSRCS})
-target_link_libraries (wsjt_cxx ${LIBM_LIBRARIES} Boost::log_setup ${LIBM_LIBRARIES})
+target_link_libraries (wsjt_cxx ${LIBM_LIBRARIES} ${LIBM_LIBRARIES})
 
 # build an OpenMP variant of the Fortran library routines
 add_library (wsjt_fort STATIC ${wsjt_FSRCS})
 target_link_libraries (wsjt_fort  ${FFTW3_LIBRARIES})
-if (${OPENMP_FOUND} OR APPLE)
-  add_library (wsjt_fort_omp STATIC ${wsjt_FSRCS})
-  target_link_libraries (wsjt_fort_omp  ${FFTW3_LIBRARIES})
-  if (OpenMP_C_FLAGS AND NOT APPLE)
-    set_target_properties (wsjt_fort_omp
-      PROPERTIES
-      COMPILE_FLAGS "${OpenMP_C_FLAGS}"
-      )
-  endif ()
-  set_target_properties (wsjt_fort_omp
-    PROPERTIES
-    Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/fortran_modules_omp
-    )
-  file (MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/fortran_modules_omp)
-  if (APPLE)
-    # On  Mac  we don't  have  working  OpenMP  support in  the  C/C++
-    # compilers so  we have to manually  set the correct flags  to get
-    # OpenMP support in jt9.
-    target_compile_options (wsjt_fort_omp
-      PRIVATE
-      $<$<COMPILE_LANGUAGE:Fortran>:-fopenmp>   # assumes GNU style Fortran compiler
-      )
-  endif (APPLE)
-endif (${OPENMP_FOUND} OR APPLE)
-
-if(WSJT_BUILD_UTILS) 
-
-add_executable (jt4sim lib/jt4sim.f90)
-target_link_libraries (jt4sim wsjt_fort wsjt_cxx)
-
-add_executable (jt65sim lib/jt65sim.f90)
-target_link_libraries (jt65sim wsjt_fort wsjt_cxx)
-
-add_executable (sumsim lib/sumsim.f90)
-target_link_libraries (sumsim wsjt_fort wsjt_cxx)
-
-add_executable (test_snr lib/test_snr.f90)
-target_link_libraries (test_snr wsjt_fort)
-
-add_executable (q65sim lib/qra/q65/q65sim.f90)
-target_link_libraries (q65sim wsjt_fort wsjt_cxx)
-
-add_executable (q65code lib/qra/q65/q65code.f90)
-target_link_libraries (q65code wsjt_fort wsjt_cxx)
-
-add_executable (test_q65 lib/test_q65.f90)
-target_link_libraries (test_q65 wsjt_fort wsjt_cxx)
-
-add_executable (q65_ftn_test lib/qra/q65/q65_ftn_test.f90)
-target_link_libraries (q65_ftn_test wsjt_fort wsjt_cxx)
-
-add_executable (jt49sim lib/jt49sim.f90)
-target_link_libraries (jt49sim wsjt_fort wsjt_cxx)
-
-#add_executable (allsim lib/allsim.f90)
-#target_link_libraries (allsim wsjt_fort wsjt_cxx)
-
-add_executable (rtty_spec lib/rtty_spec.f90)
-target_link_libraries (rtty_spec wsjt_fort wsjt_cxx)
-
-add_executable (jt65code lib/jt65code.f90)
-target_link_libraries (jt65code wsjt_fort wsjt_cxx)
-
-add_executable (jt9code lib/jt9code.f90)
-target_link_libraries (jt9code wsjt_fort wsjt_cxx)
-
-add_executable (wsprcode lib/wsprcode/wsprcode.f90 lib/wsprcode/nhash.c)
-target_link_libraries (wsprcode wsjt_fort wsjt_cxx)
-	       
-add_executable (encode77 lib/77bit/encode77.f90)
-target_link_libraries (encode77 wsjt_fort wsjt_cxx)
-
-add_executable (wsprsim ${wsprsim_CSRCS})
-target_link_libraries (wsprsim ${LIBM_LIBRARIES})
-
-add_executable (jt4code lib/jt4code.f90)
-target_link_libraries (jt4code wsjt_fort wsjt_cxx)
-
-add_executable (msk144code lib/msk144code.f90)
-target_link_libraries (msk144code wsjt_fort wsjt_cxx)
-
-add_executable (ft8code lib/ft8/ft8code.f90)
-target_link_libraries (ft8code wsjt_fort wsjt_cxx)
-
-add_executable (ft4code lib/ft4/ft4code.f90)
-target_link_libraries (ft4code wsjt_fort wsjt_cxx)
-
-add_executable (echosim lib/echosim.f90)
-target_link_libraries (echosim wsjt_fort wsjt_cxx)
-
-add_executable (ft8sim lib/ft8/ft8sim.f90)
-target_link_libraries (ft8sim wsjt_fort wsjt_cxx)
-
-add_executable (msk144sim lib/msk144sim.f90)
-target_link_libraries (msk144sim wsjt_fort wsjt_cxx)
-
-add_executable (ft4sim lib/ft4/ft4sim.f90)
-target_link_libraries (ft4sim wsjt_fort wsjt_cxx)
-
-add_executable (ft4sim_mult lib/ft4/ft4sim_mult.f90)
-target_link_libraries (ft4sim_mult wsjt_fort wsjt_cxx)
-
-add_executable (fst4sim lib/fst4/fst4sim.f90)
-target_link_libraries (fst4sim wsjt_fort wsjt_cxx)
-if (WIN32)
-  set_target_properties (fst4sim PROPERTIES
-    LINK_FLAGS -Wl,--stack,0x4000000,--heap,0x6000000
-    )
-endif ()
-
-add_executable (ldpcsim240_101 lib/fst4/ldpcsim240_101.f90)
-target_link_libraries (ldpcsim240_101 wsjt_fort wsjt_cxx)
-
-add_executable (ldpcsim240_74 lib/fst4/ldpcsim240_74.f90)
-target_link_libraries (ldpcsim240_74 wsjt_fort wsjt_cxx)
-
-endif(WSJT_BUILD_UTILS)
-
-add_executable (fmtave lib/fmtave.f90)
-
-add_executable (fcal lib/fcal.f90)
-
-add_executable (fmeasure lib/fmeasure.f90)
 
 # build the wsprd WSPR mode decoder driver
 generate_version_info (wsprd_VERSION_RESOURCES
@@ -1236,139 +997,13 @@ add_executable (wsprd ${wsprd_CSRCS} lib/indexx.f90 lib/wsprd/osdwspr.f90 ${wspr
 target_include_directories (wsprd PRIVATE ${FFTW3_INCLUDE_DIRS})
 target_link_libraries (wsprd ${FFTW3_LIBRARIES} ${LIBM_LIBRARIES})
 
-# Tell CMake to run moc when necessary
-set (CMAKE_AUTOMOC ON)
-include_directories (${CMAKE_CURRENT_BINARY_DIR})
-
-# don't use Qt "keywords" signal, slot, emit in generated files to
-# avoid compatability issue with other libraries
-# ADD_DEFINITIONS (-DQT_NO_KEYWORDS)
-# ADD_DEFINITIONS (-DUNICODE)	#as per qmake
-
-# As moc files are generated in the binary dir, tell CMake to always
-# look for includes there:
-set (CMAKE_INCLUDE_CURRENT_DIR ON)
-
-#
-# source navigation
-#
-set (sources
-  ${CMAKE_SOURCE_DIR}/*
-  ${CMAKE_SOURCE_DIR}/logbook/*
-  ${CMAKE_SOURCE_DIR}/lib/*
-  )
-add_custom_target (ctags COMMAND ${CTAGS} -o ${CMAKE_SOURCE_DIR}/tags -R ${sources})
-add_custom_target (etags COMMAND ${ETAGS} -o ${CMAKE_SOURCE_DIR}/TAGS -R ${sources})
-
-
-# Qt i18n - always include the country generic if any regional variant is included
-set (LANGUAGES
-  ca				# Catalan
-  da				# Danish
-  en				# English (we need this to stop
-				# translation loaders loading the
-				# second preference UI languge, it
-				# doesn't need to be populated)
-  en_GB				# English UK
-  es				# Spanish
-  it				# Italian
-  ja				# Japanese
-  #no				# Norwegian
-  #pt				# Portuguese
-  ru				# Russian
-  #sv				# Swedish
-  zh				# Chinese
-  zh_HK				# Chinese per Hong Kong
-  zh_TW				# Chinese traditional
-  it				# Italian
-  )
-foreach (lang_ ${LANGUAGES})
-  file (TO_NATIVE_PATH ${CMAKE_SOURCE_DIR}/translations/wsjtx_${lang_}.ts ts_)
-  list (APPEND TS_FILES ${ts_})
-  set (qt_translations_ "${QT_TRANSLATIONS_DIR}/qtbase_${lang_}.qm")
-  if (EXISTS "${qt_translations_}")
-    add_custom_command (
-      OUTPUT "${CMAKE_BINARY_DIR}/qt_${lang_}.qm"
-      COMMAND ${LCONVERT_EXECUTABLE} -o "${CMAKE_BINARY_DIR}/qt_${lang_}.qm" ${qt_translations_}
-      COMMENT "Building required Qt translations for language ${lang_}"
-      )
-    list (APPEND QM_FILES "${CMAKE_BINARY_DIR}/qt_${lang_}.qm")
-  endif ()
-endforeach ()
-if (UPDATE_TRANSLATIONS)
-  message (STATUS "UPDATE_TRANSLATIONS option is set.")
-  qt5_create_translation (
-    QM_FILES ${wsjt_qt_UISRCS} ${wsjtx_UISRCS} ${wsjt_qt_CXXSRCS} ${wsjtx_CXXSRCS}
-    ${TS_FILES}
-    OPTIONS -I${CMAKE_CURRENT_SOURCE_DIR}
-    )
-else ()
-  qt5_add_translation (QM_FILES ${TS_FILES})
-endif ()
-add_custom_target (translations DEPENDS ${QM_FILES})
-set_property (DIRECTORY PROPERTY CLEAN_NO_CUSTOM TRUE)
-
-# embedded resources
-function (add_resources resources path)
-  foreach (resource_file_ ${ARGN})
-    get_filename_component (name_ ${resource_file_} NAME)
-    if (IS_ABSOLUTE "${resource_file_}")
-      file (TO_NATIVE_PATH ${resource_file_} source_)
-    else ()
-      file (TO_NATIVE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/${resource_file_} source_)
-    endif ()
-    file (TO_NATIVE_PATH ${path}/${name_} dest_)
-    set (resources_ "${resources_}\n    <file alias=\"${dest_}\">${source_}</file>")
-    set (${resources} ${${resources}}${resources_} PARENT_SCOPE)
-  endforeach (resource_file_ ${ARGN})
-endfunction (add_resources resources path)
-
-add_resources (wsjtx_RESOURCES "" ${TOP_LEVEL_RESOURCES})
-add_resources (wsjtx_RESOURCES /Palettes ${PALETTE_FILES})
-add_resources (wsjtx_RESOURCES /Translations ${QM_FILES})
-
-configure_file (wsjtx.qrc.in wsjtx.qrc @ONLY)
-
-# UI generation
-qt5_wrap_ui (wsjt_qt_GENUISRCS ${wsjt_qt_UISRCS})
-qt5_wrap_ui (wsjtx_GENUISRCS ${wsjtx_UISRCS})
-
-# Resource generation
-qt5_add_resources (wsjtx_RESOURCES_RCC
-  ${CMAKE_BINARY_DIR}/wsjtx.qrc
-  contrib/QDarkStyleSheet/qdarkstyle/style.qrc
-  )
-
-# AX COM servers
-if (WIN32)
-  include (QtAxMacros)
-  wrap_ax_server (GENAXSRCS ${AXSERVERSRCS})
-endif (WIN32)
 
 #
 # targets dependent on Qt
 #
 
-# build a library for the QCustomPlot widget
-add_library (qcp STATIC ${qcp_CXXSRCS})
-target_include_directories (qcp PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/qcustomplot-source>)
-target_link_libraries (qcp Qt5::Widgets Qt5::PrintSupport)
-
-# build a library of package Qt functionality
-add_library (wsjt_qt STATIC ${wsjt_qt_CXXSRCS} ${wsjt_qt_GENUISRCS} ${GENAXSRCS})
-# set wsjtx_udp exports to static variants
-target_compile_definitions (wsjt_qt PUBLIC UDP_STATIC_DEFINE)
-target_link_libraries (wsjt_qt Hamlib::Hamlib Boost::log qcp Qt5::Widgets Qt5::Network Qt5::Sql)
-if (WIN32)
-  target_link_libraries (wsjt_qt Qt5::AxContainer Qt5::AxBase)
-endif (WIN32)
-
 # build a library of package Qt functionality used in Fortran utilities
 add_library (fort_qt STATIC ${fort_qt_CXXSRCS})
-
-# build a library of WSJT Qt multimedia components
-add_library (wsjt_qtmm STATIC ${wsjt_qtmm_CXXSRCS} ${wsjt_qtmm_GENUISRCS})
-target_link_libraries (wsjt_qtmm Qt5::Multimedia)
 
 # build the jt9 slow mode decoder driver
 generate_version_info (jt9_VERSION_RESOURCES
@@ -1378,312 +1013,8 @@ generate_version_info (jt9_VERSION_RESOURCES
   FILE_DESCRIPTION "jt9 - WSJT-X slow mode decoder"
   )
 
-add_executable (record_time_signal Audio/tools/record_time_signal.cpp)
-target_link_libraries (record_time_signal wsjt_cxx wsjt_qtmm wsjt_qt)
-
 add_executable (jt9 ${jt9_FSRCS} ${jt9_VERSION_RESOURCES})
-if (${OPENMP_FOUND} OR APPLE)
-  if (APPLE)
-    # On  Mac  we don't  have  working  OpenMP  support in  the  C/C++
-    # compilers so we  have to manually set the  correct linking flags
-    # and libraries to get OpenMP support in jt9.
-    set_target_properties (jt9
-      PROPERTIES
-      Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/fortran_modules_omp
-      LINK_LIBRARIES "gomp;gcc_s.1" # assume GNU libgcc OpenMP
-      )
-    target_compile_options (jt9
-      PRIVATE
-      $<$<COMPILE_LANGUAGE:Fortran>:-fopenmp>   # assumes GNU style Fortran compiler
-      )
-  else (APPLE)
-    if (OpenMP_C_FLAGS)
-      set_target_properties (jt9
-        PROPERTIES
-        COMPILE_FLAGS "${OpenMP_C_FLAGS}"
-        LINK_FLAGS "${OpenMP_C_FLAGS}"
-        )
-    endif ()
-    set_target_properties (jt9
-      PROPERTIES
-      Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/fortran_modules_omp
-      )
-  endif (APPLE)
-  if (WIN32)
-    set_target_properties (jt9 PROPERTIES
-      LINK_FLAGS -Wl,--stack,16777216
-      )
-  endif ()
-  target_link_libraries (jt9 wsjt_fort_omp wsjt_cxx fort_qt)
-else (${OPENMP_FOUND} OR APPLE)
-  target_link_libraries (jt9 wsjt_fort wsjt_cxx fort_qt)
-endif (${OPENMP_FOUND} OR APPLE)
-
-if (WIN32)
-  # build map65
-  find_package (Portaudio REQUIRED)
-  add_subdirectory (map65)
-endif ()
-
-# build the main application
-generate_version_info (wsjtx_VERSION_RESOURCES
-  NAME wsjtx
-  BUNDLE ${PROJECT_BUNDLE_NAME}
-  ICON ${WSJTX_ICON_FILE}
-  )
-
-add_executable (wsjtx MACOSX_BUNDLE
-  ${wsjtx_CXXSRCS}
-  ${wsjtx_GENUISRCS}
-  ${WSJTX_ICON_FILE}
-  ${wsjtx_RESOURCES_RCC}
-  ${wsjtx_VERSION_RESOURCES}
-  )
-
-if (WSJT_CREATE_WINMAIN)
-  set_target_properties (wsjtx PROPERTIES WIN32_EXECUTABLE ON)
-endif (WSJT_CREATE_WINMAIN)
-
-set_target_properties (wsjtx PROPERTIES
-  MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Darwin/Info.plist.in"
-  MACOSX_BUNDLE_INFO_STRING "${PROJECT_DESCRIPTION}"
-  MACOSX_BUNDLE_ICON_FILE "${WSJTX_ICON_FILE}"
-  MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}
-  MACOSX_BUNDLE_SHORT_VERSION_STRING "v${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}"
-  MACOSX_BUNDLE_LONG_VERSION_STRING "Version ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}${SCS_VERSION_STR}"
-  MACOSX_BUNDLE_BUNDLE_NAME "${PROJECT_BUNDLE_NAME}"
-  MACOSX_BUNDLE_BUNDLE_EXECUTABLE_NAME "${PROJECT_NAME}"
-  MACOSX_BUNDLE_COPYRIGHT "${PROJECT_COPYRIGHT}"
-  MACOSX_BUNDLE_GUI_IDENTIFIER "org.k1jt.wsjtx"
-  )
-
-target_include_directories (wsjtx PRIVATE ${FFTW3_INCLUDE_DIRS})
-if ((NOT ${OPENMP_FOUND}) OR APPLE)
-  target_link_libraries (wsjtx wsjt_fort)
-else ()
-  target_link_libraries (wsjtx wsjt_fort_omp)
-  if (OpenMP_C_FLAGS)
-    set_target_properties (wsjtx PROPERTIES
-      COMPILE_FLAGS "${OpenMP_C_FLAGS}"
-      LINK_FLAGS "${OpenMP_C_FLAGS}"
-      )
-  endif ()
-  set_target_properties (wsjtx PROPERTIES
-    Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/fortran_modules_omp
-    )
-  if (WIN32)
-    set_target_properties (wsjtx PROPERTIES
-      LINK_FLAGS -Wl,--stack,0x1000000,--heap,0x20000000
-      )
-  endif ()
-endif ()
-target_link_libraries (wsjtx Qt5::SerialPort wsjt_cxx wsjt_qt wsjt_qtmm ${FFTW3_LIBRARIES} ${LIBM_LIBRARIES})
-
-# make a library for WSJT-X UDP servers
-# add_library (wsjtx_udp SHARED ${UDP_library_CXXSRCS})
-add_library (wsjtx_udp-static STATIC ${UDP_library_CXXSRCS})
-#target_include_directories (wsjtx_udp
-#  INTERFACE
-#  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/wsjtx>
-#  )
-target_include_directories (wsjtx_udp-static
-  INTERFACE
-  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/wsjtx>
-  )
-#set_target_properties (wsjtx_udp PROPERTIES
-#  PUBLIC_HEADER "${UDP_library_HEADERS}"
-#  )
-set_target_properties (wsjtx_udp-static PROPERTIES
-  OUTPUT_NAME wsjtx_udp
-  )
-target_compile_definitions (wsjtx_udp-static PUBLIC UDP_STATIC_DEFINE)
-target_link_libraries (wsjtx_udp-static Qt5::Network Qt5::Gui)
-generate_export_header (wsjtx_udp-static BASE_NAME udp)
-
-generate_version_info (udp_daemon_VERSION_RESOURCES
-  NAME udp_daemon
-  BUNDLE ${PROJECT_BUNDLE_NAME}
-  ICON ${WSJTX_ICON_FILE}
-  FILE_DESCRIPTION "Example WSJT-X UDP Message Protocol daemon"
-  )
-add_executable (udp_daemon UDPExamples/UDPDaemon.cpp ${udp_daemon_VERSION_RESOURCES})
-target_link_libraries (udp_daemon wsjtx_udp-static)
-
-generate_version_info (wsjtx_app_version_VERSION_RESOURCES
-  NAME wsjtx_app_version
-  BUNDLE ${PROJECT_BUNDLE_NAME}
-  ICON ${WSJTX_ICON_FILE}
-  FILE_DESCRIPTION "Display WSJT-X Application Version on console"
-  )
-add_executable (wsjtx_app_version AppVersion/AppVersion.cpp ${wsjtx_app_version_VERSION_RESOURCES})
-target_link_libraries (wsjtx_app_version wsjt_qt)
-
-generate_version_info (message_aggregator_VERSION_RESOURCES
-  NAME message_aggregator
-  BUNDLE ${PROJECT_BUNDLE_NAME}
-  ICON ${WSJTX_ICON_FILE}
-  FILE_DESCRIPTION "Example WSJT-X UDP Message Protocol application"
-  )
-add_resources (message_aggregator_RESOURCES /qss ${message_aggregator_STYLESHEETS})
-configure_file (UDPExamples/message_aggregator.qrc.in message_aggregator.qrc @ONLY)
-qt5_add_resources (message_aggregator_RESOURCES_RCC
-  ${CMAKE_CURRENT_BINARY_DIR}/message_aggregator.qrc
-  contrib/QDarkStyleSheet/qdarkstyle/style.qrc
-  )
-add_executable (message_aggregator
-  ${message_aggregator_CXXSRCS}
-  ${message_aggregator_RESOURCES_RCC}
-  ${message_aggregator_VERSION_RESOURCES}
-  )
-target_link_libraries (message_aggregator wsjt_qt Qt5::Widgets wsjtx_udp-static)
-
-if (WSJT_CREATE_WINMAIN)
-  set_target_properties (message_aggregator PROPERTIES WIN32_EXECUTABLE ON)
-endif (WSJT_CREATE_WINMAIN)
-
-if (UNIX)
-  if (NOT WSJT_SKIP_MANPAGES)
-    add_subdirectory (manpages)
-    add_dependencies (wsjtx manpages)
-  endif (NOT WSJT_SKIP_MANPAGES)
-  if (NOT APPLE)
-    add_subdirectory (debian)
-    add_dependencies (wsjtx debian)
-  endif (NOT APPLE)
-endif (UNIX)
-
-#
-# installation
-#
-install (TARGETS wsjtx
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT runtime
-  BUNDLE DESTINATION . COMPONENT runtime
-  )
-
-# install (TARGETS wsjtx_udp EXPORT udp
-#   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-#   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-#   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-#   PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/wsjtx
-#   )
-# install (TARGETS wsjtx_udp-static EXPORT udp-static
-#   DESTINATION ${CMAKE_INSTALL_LIBDIR}
-#   )
-
-# install (EXPORT udp NAMESPACE wsjtx::
-#   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/wsjtx
-#   )
-# install (EXPORT udp-static NAMESPACE wsjtx::
-#   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/wsjtx
-#   )
-
-install (TARGETS udp_daemon message_aggregator wsjtx_app_version
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT runtime
-  BUNDLE DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT runtime
-  )
-
-install (TARGETS jt9 wsprd fmtave fcal fmeasure
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT runtime
-  BUNDLE DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT runtime
-  )
-
-if(WSJT_BUILD_UTILS)
-install (TARGETS ft8code jt65code jt9code jt4code msk144code 
-  q65code fst4sim q65sim echosim
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT runtime
-  BUNDLE DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT runtime
-  )
-endif(WSJT_BUILD_UTILS)  
-
-install (PROGRAMS
-  ${RIGCTL_EXE}
-  DESTINATION ${CMAKE_INSTALL_BINDIR}
-  #COMPONENT runtime
-  RENAME rigctl-wsjtx${CMAKE_EXECUTABLE_SUFFIX}
-  )
-
-install (PROGRAMS
-  ${RIGCTLD_EXE}
-  DESTINATION ${CMAKE_INSTALL_BINDIR}
-  #COMPONENT runtime
-  RENAME rigctld-wsjtx${CMAKE_EXECUTABLE_SUFFIX}
-  )
-
-install (PROGRAMS
-  ${RIGCTLCOM_EXE}
-  DESTINATION ${CMAKE_INSTALL_BINDIR}
-  #COMPONENT runtime
-  RENAME rigctlcom-wsjtx${CMAKE_EXECUTABLE_SUFFIX}
-  )
-
-install (FILES
-  README
-  COPYING
-  AUTHORS
-  THANKS
-  NEWS
-  BUGS
-  DESTINATION ${CMAKE_INSTALL_DOCDIR}
-  #COMPONENT runtime
-  )
-
-install (FILES
-  cty.dat
-  cty.dat_copyright.txt
-  contrib/Ephemeris/JPLEPH
-  DESTINATION ${CMAKE_INSTALL_DATADIR}/${CMAKE_PROJECT_NAME}
-  #COMPONENT runtime
-  )
-
-install (DIRECTORY
-  example_log_configurations
-  DESTINATION ${CMAKE_INSTALL_DOCDIR}
-  FILES_MATCHING REGEX "^.*[^~]$"
-  #COMPONENT runtime
-  )
-
-#
-# Mac installer files
-#
-if (APPLE)
-    install (FILES
-        Darwin/ReadMe.txt
-        Darwin/com.wsjtx.sysctl.plist
-        DESTINATION .
-        #COMPONENT runtime
-    )
-endif (APPLE)
-
-
-#
-# uninstall support
-#
-configure_file (
-  "${CMAKE_CURRENT_SOURCE_DIR}/CMake/cmake_uninstall.cmake.in"
-  "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake"
-  @ONLY)
-add_custom_target (uninstall
-  "${CMAKE_COMMAND}" -P "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake")
-
-
-# creates or updates ${PROJECT_BINARY_DIR}/scs_version.h using cmake script
-add_custom_target (revisiontag
-  COMMAND ${CMAKE_COMMAND}
-  -D SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
-  -D BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
-  -D OUTPUT_DIR=${PROJECT_BINARY_DIR}
-  -P ${CMAKE_CURRENT_SOURCE_DIR}/CMake/getsvn.cmake
-  VERBATIM
-  BYPRODUCTS scs_version.h
-  COMMENT "Getting source control system revision information"
-  )
-# explicitly say that the wsjt_qt depends on custom target, this is
-# done indirectly so that the revisiontag target gets built exactly
-# once per build
-add_dependencies (wsjt_qt revisiontag)
-add_dependencies (jt9 revisiontag)
-add_dependencies (wsprd revisiontag)
-
+target_link_libraries (jt9 wsjt_fort wsjt_cxx fort_qt)
 
 #
 # versioning and configuration
@@ -1693,96 +1024,3 @@ configure_file (
   "${CMAKE_CURRENT_BINARY_DIR}/wsjtx_config.h"
   )
 
-
-if (NOT WIN32 AND NOT APPLE)
-  # install a desktop file so wsjtx appears in the application start
-  # menu with an icon
-  install (
-    FILES wsjtx.desktop message_aggregator.desktop
-    DESTINATION share/applications
-    #COMPONENT runtime
-    )
-  install (
-    FILES icons/Unix/wsjtx_icon.png
-    DESTINATION share/pixmaps
-    #COMPONENT runtime
-    )
-endif (NOT WIN32 AND NOT APPLE)
-
-if (APPLE)
-  set (CMAKE_POSTFLIGHT_SCRIPT
-    "${wsjtx_BINARY_DIR}/postflight.sh")
-  set (CMAKE_POSTUPGRADE_SCRIPT
-    "${wsjtx_BINARY_DIR}/postupgrade.sh")
-  configure_file ("${wsjtx_SOURCE_DIR}/Darwin/postflight.sh.in"
-    "${CMAKE_POSTFLIGHT_SCRIPT}")
-  configure_file ("${wsjtx_SOURCE_DIR}/Darwin/postupgrade.sh.in"
-    "${CMAKE_POSTUPGRADE_SCRIPT}")
-endif ()
-
-
-#
-# bundle fixup only done in non-Debug configurations
-#
-if (NOT is_debug_build)
-  # add this sub-sirectory after all install steps and other
-  # sub-directories to ensure that all executables are in-place before
-  # any fixup is done
-  add_subdirectory (bundle_fixup)
-endif ()
-
-
-#
-# packaging
-#
-set (CPACK_PACKAGE_DESCRIPTION_FILE "${CMAKE_SOURCE_DIR}/package_description.txt")
-set (CPACK_MONOLITHIC_INSTALL 1)
-set (CPACK_PACKAGE_NAME "${CMAKE_PROJECT_NAME}")
-set (CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
-set (CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
-set (CPACK_PACKAGE_VERSION_PATCH "${PROJECT_VERSION_PATCH}${BUILD_TYPE_REVISION}")
-
-if (WIN32)
-  set (CPACK_GENERATOR "NSIS")
-elseif (APPLE)
-  set (CPACK_GENERATOR "DragNDrop")
-else ()
-  find_program (DPKG_BUILDER dpkg-buildpackage DOC "Debian package builder")
-  if (DPKG_BUILDER)
-    #
-    # Derive the correct filename for a Debian package because the DEB
-    # generator doesn't do this correctly at present.
-    #
-    find_program (DPKG_PROGRAM dpkg DOC "dpkg program of Debian-based systems")
-    if (DPKG_PROGRAM)
-      execute_process (
-	COMMAND ${DPKG_PROGRAM} --print-architecture
-	OUTPUT_VARIABLE CPACK_DEBIAN_PACKAGE_ARCHITECTURE
-	OUTPUT_STRIP_TRAILING_WHITESPACE
-	)
-    else (DPKG_PROGRAM)
-      set (CPACK_DEBIAN_PACKAGE_ARCHITECTURE noarch)
-    endif (DPKG_PROGRAM)
-
-    list (APPEND CPACK_GENERATOR "DEB")
-  endif (DPKG_BUILDER)
-
-  find_program (RPMBUILDER rpmbuild DOC "RPM package builder")
-  if (RPMBUILDER)
-    list (APPEND CPACK_GENERATOR "RPM")
-  endif (RPMBUILDER)
-endif ()
-
-set (CPACK_DEBIAN_PACKAGE_HOMEPAGE "${PROJECT_HOMEPAGE}")
-set (CPACK_DEBIAN_PACKAGE_DEPENDS "libgfortran5 (>=8.3) | libgfortran4 (>=7.3) | libgfortran3 (>=6.3), libfftw3-single3 (>=3.3), libgomp1 (>=6), libqt5serialport5 (>=5.7), libqt5multimedia5-plugins (>=5.7), libqt5widgets5 (>=5.7), libqt5network5 (>=5.7), libqt5printsupport5 (>=5.7), libqt5sql5-sqlite (>=5.7), libusb-1.0-0 (>=1.0.21), libboost-log1.62.0 (>=1.62.0) | libboost-log1.65.1 (>=1.65.1) | libboost-log1.67.0 (>=1.67.0) | libboost-log1.71.0 (>=1.71.0) | libboost-log1.74.0 (>=1.74.0)")
-set (CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
-
-set (CPACK_RPM_PACKAGE_ARCHITECTURE ${CMAKE_SYSTEM_PROCESSOR})
-set (CPACK_RPM_PACKAGE_REQUIRES "qt5-qtbase >= 5.9, qt5-qtserialport >= 5.9, qt5-qtmultimedia >= 5.9, qt5-qtsvg >= 5.9, libusbx >= 1.0.22, libgfortran >= 7, libgomp >= 7, fftw-libs-single >= 3.3, boost-log >= 1.62")
-set (CPACK_RPM_EXCLUDE_FROM_AUTO_FILELIST_ADDITION /usr/share/pixmaps /usr/share/applications /usr/share/man /usr/share/man1)
-
-configure_file ("${PROJECT_SOURCE_DIR}/CMakeCPackOptions.cmake.in"
-  "${PROJECT_BINARY_DIR}/CMakeCPackOptions.cmake" @ONLY)
-set (CPACK_PROJECT_CONFIG_FILE "${PROJECT_BINARY_DIR}/CMakeCPackOptions.cmake")
-
-include (CPack)
