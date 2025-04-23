@@ -44,31 +44,30 @@ contains
 
     class(ft8_decoder), intent(inout) :: this
     procedure(ft8_decode_callback) :: callback
-    parameter (MAXCAND=600,MAX_EARLY=100)
+    parameter (MAXCAND=600,MAX_EARLY=200,NPTS=15*12000)
     real*8 tsec,tseq
-    real s(NH1,NHSYM)
     real sbase(NH1)
     real candidate(3,MAXCAND)
-    real dd(15*12000),dd1(15*12000)
+    real dd(NPTS),dd1(NPTS)
     logical, intent(in) :: lft8apon,lapcqonly,nagain
     logical newdat,lsubtract,ldupe,lrefinedt
     logical*1 ldiskdat
     logical lsubtracted(MAX_EARLY)
     character*12 mycall12,hiscall12,call_1,call_2
     character*4 grid4
-    integer*2 iwave(15*12000)
+    integer*2 iwave(NPTS)
     integer apsym2(58),aph10(10)
     character datetime*13,msg37*37
-    character*37 allmessages(200)
+    character*37 allmessages(MAX_EARLY)
     character*12 ctime
-    integer allsnrs(100)
+    integer allsnrs(MAX_EARLY)
     integer itone(NN)
     integer itone_save(NN,MAX_EARLY)
     real f1_save(MAX_EARLY)
     real xdt_save(MAX_EARLY)
     data nutc0/-1/
 
-    save s,dd,dd1,nutc0,ndec_early,itone_save,f1_save,xdt_save,lsubtracted,&
+    save dd,dd1,nutc0,ndec_early,itone_save,f1_save,xdt_save,lsubtracted,  &
          allmessages
     
     this%callback => callback
@@ -193,8 +192,7 @@ contains
       endif 
       call timer('sync8   ',0)
       maxc=MAXCAND
-      call sync8(dd,ifa,ifb,syncmin,nfqso,maxc,nzhsym,candidate,   &
-           ncand,sbase)
+      call sync8(dd,NPTS,ifa,ifb,syncmin,nfqso,maxc,candidate,ncand,sbase)
       call timer('sync8   ',1)
       do icand=1,ncand
         sync=candidate(3,icand)
@@ -217,6 +215,9 @@ contains
               if(msg37.eq.allmessages(id)) ldupe=.true.
            enddo
            if(.not.ldupe) then
+              if(ndecodes.ge.MAX_EARLY) then 
+                cycle
+              endif
               ndecodes=ndecodes+1
               allmessages(ndecodes)=msg37
               allsnrs(ndecodes)=nsnr

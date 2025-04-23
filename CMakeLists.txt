@@ -45,11 +45,12 @@ if (POLICY CMP0075)
 endif ()
 
 project (wsjtx
-  VERSION 2.6.1.0
+  VERSION 2.7.0.0
   LANGUAGES C CXX Fortran
   )
 set (PROJECT_DESCRIPTION "WSJT-X: Digital Modes for Weak Signal Communications in Amateur Radio")
 set (CMAKE_PROJECT_DESCRIPTION ${PROJECT_DESCRIPTION})
+set (CMAKE_AUTOUIC ON) 
 
 #
 # Local CMake modules and support files
@@ -80,7 +81,7 @@ set (wsjtx_VERSION "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_
 set (PROJECT_BUNDLE_NAME "WSJT-X")
 set (PROJECT_VENDOR "Joe Taylor, K1JT")
 set (PROJECT_CONTACT "Joe Taylor <k1jt@arrl.net>")
-set (PROJECT_COPYRIGHT "Copyright (C) 2001-2023 by Joe Taylor, K1JT")
+set (PROJECT_COPYRIGHT "Copyright (C) 2001-2025 by Joe Taylor, K1JT")
 set (PROJECT_HOMEPAGE https://wsjt.sourceforge.io/wsjtx.html)
 set (PROJECT_MANUAL wsjtx-main)
 set (PROJECT_MANUAL_DIRECTORY_URL https://wsjt.sourceforge.io/wsjtx-doc/)
@@ -126,6 +127,7 @@ option (WSJT_GENERATE_DOCS "Generate documentation files." ON)
 option (WSJT_RIG_NONE_CAN_SPLIT "Allow split operation with \"None\" as rig.")
 option (WSJT_TRACE_UDP "Debugging option that turns on UDP message protocol diagnostics.")
 option (WSJT_BUILD_UTILS "Build simulators and code demonstrators." ON)
+option (WSJT_FOX_OTP "Enable Fox OTP Verification Messages." ON)
 CMAKE_DEPENDENT_OPTION (WSJT_QDEBUG_IN_RELEASE "Leave Qt debugging statements in Release configuration." OFF
   "NOT is_debug_build" OFF)
 CMAKE_DEPENDENT_OPTION (WSJT_ENABLE_EXPERIMENTAL_FEATURES "Enable features not fully ready for public releases." ON
@@ -161,6 +163,12 @@ endif ()
 set (WSJT_PLUGIN_DESTINATION ${PLUGIN_DESTINATION} CACHE PATH "Path for plugins")
 set (WSJT_QT_CONF_DESTINATION ${QT_CONF_DESTINATION} CACHE PATH "Path for the qt.conf file")
 
+if (WSJT_FOX_OTP)
+  set (wsjt_fox_CXXSRCS
+
+  )
+  message (STATUS "Including Fox verification code feature")
+endif ()
 
 #
 # Project sources
@@ -222,6 +230,8 @@ set (wsjt_qt_CXXSRCS
   widgets/DoubleClickablePushButton.cpp
   widgets/DoubleClickableRadioButton.cpp
   Network/LotWUsers.cpp
+  Network/FileDownload.cpp
+  Network/FoxVerifier.cpp
   models/DecodeHighlightingModel.cpp
   widgets/DecodeHighlightingListView.cpp
   models/FoxLog.cpp
@@ -241,6 +251,7 @@ set (wsjt_qt_CXXSRCS
   widgets/LazyFillComboBox.cpp
   widgets/CheckableItemComboBox.cpp
   widgets/BandComboBox.cpp
+  otpgenerator.cpp
   )
 
 set (wsjt_qtmm_CXXSRCS
@@ -284,6 +295,9 @@ set (wsjtx_CXXSRCS
   Network/wsprnet.cpp
   WSPR/WSPRBandHopping.cpp
   widgets/ExportCabrillo.cpp
+  widgets/QSYMessage.cpp 
+  widgets/QSYMessageCreator.cpp
+  widgets/qsymonitor.cpp
   )
 
 set (wsjt_CXXSRCS
@@ -291,6 +305,7 @@ set (wsjt_CXXSRCS
   lib/crc10.cpp
   lib/crc13.cpp
   lib/crc14.cpp
+  ${wsjt_fox_CXXSRCS}
   )
 # deal with a GCC v6 UB error message
 set_source_files_properties (
@@ -327,6 +342,7 @@ set (wsjt_FSRCS
   lib/ft8_decode.f90
   lib/ft4_decode.f90
   lib/fst4_decode.f90
+  lib/get_q3list.f90
   lib/jt9_decode.f90
   lib/options.f90
   lib/packjt.f90
@@ -340,6 +356,10 @@ set (wsjt_FSRCS
   lib/wavhdr.f90
   lib/qra/q65/q65_encoding_modules.f90
   lib/ft8/ft8_a7.f90
+  lib/superfox/sfox_mod.f90
+  lib/superfox/julian.f90
+  lib/superfox/popen_module.f90
+  lib/superfox/qpc/qpc_mod.f90
 
   # remaining non-module sources
   lib/addit.f90
@@ -361,6 +381,7 @@ set (wsjt_FSRCS
   lib/bpdecode128_90.f90
   lib/ft8/bpdecode174_91.f90
   lib/baddata.f90
+  lib/cablog.f90
   lib/calibrate.f90
   lib/ccf2.f90
   lib/ccf65.f90
@@ -424,7 +445,7 @@ set (wsjt_FSRCS
   lib/fspread_lorentz.f90
   lib/ft8/foxfilt.f90
   lib/ft8/foxgen.f90
-  lib/ft8/foxgen_wrap.f90
+#  lib/ft8/foxgen_wrap.f90
   lib/freqcal.f90
   lib/ft8/ft8apset.f90
   lib/ft8/ft8b.f90
@@ -490,6 +511,7 @@ set (wsjt_FSRCS
   lib/msk144sim.f90
   lib/mskrtd.f90
   lib/nuttal_window.f90
+  lib/decode_msk144.f90
   lib/ft4/ft4sim.f90
   lib/ft4/ft4sim_mult.f90
   lib/ft4/ft4_downsample.f90
@@ -509,6 +531,7 @@ set (wsjt_FSRCS
   lib/qra/q65/q65_ap.f90
   lib/qra/q65/q65_loops.f90
   lib/qra/q65/q65_set_list.f90
+  lib/qra/q65/q65_set_list2.f90
   lib/refspectrum.f90
   lib/savec2.f90
   lib/save_dxbase.f90
@@ -580,6 +603,28 @@ set (wsjt_FSRCS
   lib/fst4/fastosd240_74.f90
   lib/fst4/get_crc24.f90
   lib/fst4/fst4_baseline.f90
+  lib/77bit/hash22calc.f90
+
+  lib/superfox/foxgen2.f90
+  lib/superfox/qpc_decode2.f90
+  lib/superfox/qpc_likelihoods2.f90
+  lib/superfox/qpc_snr.f90
+  lib/superfox/qpc_sync.f90
+  lib/superfox/sfox_ana.f90
+  lib/superfox/sfox_assemble.f90
+  lib/superfox/sfox_demod.f90
+  lib/superfox/sfox_pack.f90
+  lib/superfox/sfox_remove_ft8.f90
+  lib/superfox/sfox_remove_tone.f90
+  lib/superfox/sfox_unpack.f90
+  lib/superfox/sfox_wave.f90
+  lib/superfox/sfox_wave_gfsk.f90
+  lib/superfox/sfrx_sub.f90
+  lib/superfox/sftx_sub.f90
+  lib/superfox/twkfreq2.f90
+  lib/superfox/sfox_gen_gfsk.f90
+  lib/superfox/ran1.f90
+  lib/superfox/sfoxsim.f90
   )
 
 # temporary workaround for a gfortran v7.3 ICE on Fedora 27 64-bit
@@ -622,6 +667,15 @@ set (wsjt_CSRCS
   lib/wrapkarn.c
   ${ldpc_CSRCS}
   ${qra_CSRCS}
+
+  lib/superfox/qpc/dbgprintf.c
+  lib/superfox/qpc/nhash2.c
+  lib/superfox/qpc/np_qpc.c
+  lib/superfox/qpc/np_rnd.c
+  lib/superfox/qpc/qpc_fwht.c
+  lib/superfox/qpc/qpc_n127k50q128.c
+  lib/superfox/qpc/qpc_subs.c
+  
   )
 
 set (wsjt_qt_UISRCS
@@ -663,6 +717,9 @@ set (wsjtx_UISRCS
   widgets/logqso.ui
   Configuration.ui
   widgets/ExportCabrillo.ui
+  widgets/QSYMessage.ui
+  widgets/QSYMessageCreator.ui
+  widgets/qsymonitor.ui
   )
 
 set (UDP_library_CXXSRCS

@@ -64,6 +64,9 @@ typedef struct dec_data {
     char mygrid[6];
     char hiscall[12];
     char hisgrid[6];
+    bool b_even_seq;
+    bool b_superfox;
+    int yymmdd;
   } params;
 } dec_data_t;
 
@@ -91,6 +94,9 @@ extern struct {
   int   i3bit[5];
   char  cmsg[5][40];
   char  mycall[12];
+  char  textMsg[26];
+  bool  bMoreCQs;
+  bool  bSendMsg;
 } foxcom_;
 
 #ifdef __cplusplus

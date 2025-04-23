@@ -659,7 +659,7 @@ QModelIndex FrequencyList_v2_101::impl::add (Item f)
       endInsertRows ();
 
       // if we added one that had a preferred frequency, unprefer everything else
-      unprefer_all_but(f, row, {Qt::DisplayRole, Qt::CheckStateRole});
+      if (f.preferred_) unprefer_all_but(f, row, {Qt::DisplayRole, Qt::CheckStateRole});
 
       return index (row, 0);
     }
@@ -1335,8 +1335,10 @@ FrequencyList_v2_101::FrequencyItems FrequencyList_v2_101::from_json_file(QFile 
     {
       throw ReadFileException{tr ("No Frequencies were found")};
     }
+#ifdef DUMP_ENTRY_COUNTS
   int valid_entry_count = 0;
   int skipped_entry_count = 0;
+#endif
   for (auto const &item: arr)
     {
       QString mode_s, region_s;
@@ -1359,13 +1361,21 @@ FrequencyList_v2_101::FrequencyItems FrequencyList_v2_101::from_json_file(QFile 
           freq.isSane())
         {
           list.push_back(freq);
+#ifdef DUMP_ENTRY_COUNTS          
           valid_entry_count++;
-        } else
+#endif          
+        } else {
+#ifdef DUMP_ENTRY_COUNTS            
         skipped_entry_count++;
+#endif    
+    	}
     }
-  //MessageBox::information_message(this, tr("Loaded Frequencies from %1").arg(file_name),
-  //                                tr("Entries Valid/Skipped %1").arg(QString::number(valid_entry_count) + "/" +
-  //                                                                   QString::number(skipped_entry_count)));
+
+#ifdef DUMP_ENTRY_COUNTS
+  MessageBox::information_message(this, tr("Loaded Frequencies from %1").arg(file_name),
+                                  tr("Entries Valid/Skipped %1").arg(QString::number(valid_entry_count) + "/" +
+                                                                     QString::number(skipped_entry_count)));
+#endif
   return list;
 }
 // write JSON format to a file

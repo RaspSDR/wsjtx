@@ -213,27 +213,11 @@ void DisplayText::insertText(QString const& text, QColor bg, QColor fg
 
 void DisplayText::extend_vertical_scrollbar (int min, int max)
 {
-  static int mod_last;
-  static int height;
   if (high_volume_ && m_config && m_config->decodes_from_top ())
     {
-      auto m = modified_vertical_scrollbar_max_;
-      if (m != mod_last) { height = m - mod_last;mod_last = m; }
-      //auto vp_margins2 = viewportMargins ();
-      if (height == 0 && m > viewport()->height()) height =  abs( - viewport()->height());
-      //LOG_INFO ("scrollbar min=" << min << " max="  << max << " mod=" << modified_vertical_scrollbar_max_ << " height=" << viewport()->height() << " top=" << vp_margins2.top() << " bottom=" << vp_margins2.bottom()) << " height=" << height << " mod_last=" << mod_last;
-      if (max > 60000)
-        {
-          QString tmp = toPlainText();
-          while (tmp != NULL && tmp.length() > 100 &&  max > 50000)
-          {
-            tmp.remove(0, tmp.indexOf("\n")+1);
-            max -= height;
-          }
-          setPlainText(tmp);
-        }
       if (max && max != modified_vertical_scrollbar_max_)
         {
+          setViewportMargins (0,4,0,0);  // ensure first line is readable
           auto vp_margins = viewportMargins ();
           // add enough to vertical scroll bar range to allow last
           // decode to just scroll of the top of the view port
@@ -246,6 +230,10 @@ void DisplayText::extend_vertical_scrollbar (int min, int max)
 
 void DisplayText::new_period ()
 {
+  if (m_config->decodes_from_top ()) {
+    document ()->setMaximumBlockCount (4800);
+    document ()->setMaximumBlockCount (5000);
+  }
   extend_vertical_scrollbar (verticalScrollBar ()->minimum (), verticalScrollBar ()->maximum ());
   if (high_volume_ && m_config && m_config->decodes_from_top () && !vertical_scroll_connection_)
     {
@@ -379,12 +367,24 @@ QString DisplayText::appendWorkedB4 (QString message, QString call, QString cons
           countryName.replace ("Central ", "C. ");
           countryName.replace (" and ", " & ");
           countryName.replace ("Republic", "Rep.");
+          countryName.replace ("United States of America", "U.S.A.");
           countryName.replace ("United States", "U.S.A.");
           countryName.replace ("Fed. Rep. of ", "");
           countryName.replace ("French ", "Fr.");
           countryName.replace ("Asiatic", "AS");
           countryName.replace ("European", "EU");
           countryName.replace ("African", "AF");
+
+          // assign WAE entities to the correct DXCC when "Include extra WAE entities" is not selected
+          if (!(m_config->include_WAE_entities())) {
+            countryName.replace ("Bear Is.", "Svalbard");
+            countryName.replace ("Shetland Is.", "Scotland");
+            countryName.replace ("AF Italy", "Italy");
+            countryName.replace ("Sicily", "Italy");
+            countryName.replace ("Vienna Intl Ctr", "Austria");
+            countryName.replace ("AF Turkey", "Turkey");
+            countryName.replace ("EU Turkey", "Turkey");
+          }
 
           extra += countryName;
         }
@@ -506,11 +506,11 @@ void DisplayText::displayDecodedText(DecodedText const& decodedText, QString con
 
 
 void DisplayText::displayTransmittedText(QString text, QString modeTx, qint32 txFreq,
-                                         bool bFastMode, double TRperiod)
+                                         bool bFastMode, double TRperiod,bool bSuperfox)
 {
     QString t1=" @  ";
     if(modeTx=="FT4") t1=" +  ";
-    if(modeTx=="FT8") t1=" ~  ";
+    if(modeTx.contains("FT8")) t1=" ~  ";
     if(modeTx=="JT4") t1=" $  ";
     if(modeTx=="Q65") t1=" :  ";
     if(modeTx=="JT65") t1=" #  ";
@@ -519,7 +519,8 @@ void DisplayText::displayTransmittedText(QString text, QString modeTx, qint32 tx
     QString t2;
     t2 = t2.asprintf("%4d",txFreq);
     QString t;
-    if(bFastMode or modeTx=="FT8" or modeTx=="FT4" or (TRperiod<60)) {
+    if(bFastMode or modeTx=="FT8" or modeTx=="FT4" or (TRperiod<60) or
+       (modeTx=="Q65" and TRperiod==60)) {
       t = QDateTime::currentDateTimeUtc().toString("hhmmss") + \
         "  Tx      " + t2 + t1 + text;
     } else if(modeTx.mid(0,6)=="FT8fox") {
@@ -533,7 +534,18 @@ void DisplayText::displayTransmittedText(QString text, QString modeTx, qint32 tx
     QColor fg;
     highlight_types types {Highlight::Tx};
     set_colours (m_config, &bg, &fg, types);
-    insertText (t, bg, fg);
+    if(bSuperfox and t.contains(";")) {
+      int i0=t.indexOf(";");
+      int i1=t.indexOf("<");
+      int i2=t.indexOf(">");
+      QString foxcall=t.mid(i1+1,i2-i1-1);
+      t2=t.left(i0).replace(" RR73", " " + foxcall + " RR73");
+      QString t3=t.left(24) + t.mid(i0+2,-1).remove("<").remove(">");
+      insertText (t2, bg, fg);
+      insertText (t3, bg, fg);
+    } else {
+      insertText (t, bg, fg);
+    }
 }
 
 void DisplayText::displayQSY(QString text)
@@ -546,6 +558,22 @@ void DisplayText::displayHoundToBeCalled(QString t, bool bAtTop, QColor bg, QCol
 {
   if (bAtTop)  t = t + "\n"; // need a newline when insertion at top
   insertText(t, bg, fg, "", "", bAtTop ? QTextCursor::Start : QTextCursor::End);
+}
+
+void DisplayText::setHighlightedHoundText(QString t) {
+  QColor bg=QColor{255,255,255};
+  QColor fg=QColor{0,0,0};
+  highlight_types types{Highlight::Call};
+  set_colours(m_config, &bg, &fg, types);
+  // t is multiple lines of text, each line is a hound calling
+  // iterate through each line and highlight the callsign
+  auto lines = t.split(QChar('\n'), SkipEmptyParts);
+  clear();
+  foreach (auto line, lines)
+  {
+    auto fields = line.split(QChar(' '), SkipEmptyParts);
+    insertText(line, bg, fg, fields.first(), QString{});
+  }
 }
 
 namespace
@@ -605,6 +633,11 @@ void DisplayText::highlight_callsign (QString const& callsign, QColor const& bg,
 {
   if (!callsign.size ())
     {
+      return;
+    }
+  if (callsign == "CLEARALL!")  // programmatic means of clearing all highlighting
+    {
+      highlighted_calls_.clear();
       return;
     }
   auto regexp = callsign;

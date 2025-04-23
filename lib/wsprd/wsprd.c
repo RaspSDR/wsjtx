@@ -35,6 +35,7 @@
 #include <stdint.h>
 #include <time.h>
 #include <fftw3.h>
+#include <errno.h>
 
 #include "fano.h"
 #include "jelinek.h"
@@ -77,7 +78,7 @@ unsigned long readc2file(char *ptr_to_infile, float *idat, float *qdat,
     
     fp = fopen(ptr_to_infile,"rb");
     if (fp == NULL) {
-        fprintf(stderr, "Cannot open data file '%s'\n", ptr_to_infile);
+        fprintf(stderr, "Cannot open data file '%s': %s\n", ptr_to_infile, strerror(errno));
         return 1;
     }
     nr=fread(c2file,sizeof(char),14,fp);
@@ -146,6 +147,7 @@ unsigned long readwavfile(char *ptr_to_infile, int ntrmin, float *idat, float *q
     nr=fread(buf2,2,npoints,fp); //Read raw data
     fclose(fp);
     if( nr == 0 ) {
+        free(buf2);
         fprintf(stderr, "No data in file '%s'\n", ptr_to_infile);
         return 1;
     }	
@@ -1165,7 +1167,7 @@ int main(int argc, char *argv[])
                         for (k=0; k<162; k++) {                             //Sum over symbols
                             ifd=ifr+((float)k-81.0)/81.0*( (float)idrift )/(2.0*df);
                             kindex=k0+2*k;
-                            if( kindex < nffts ) {
+                            if( kindex >= 0 && kindex < nffts ) {
                                 p0=ps[ifd-3][kindex];
                                 p1=ps[ifd-1][kindex];
                                 p2=ps[ifd+1][kindex];

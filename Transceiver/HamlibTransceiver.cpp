@@ -619,6 +619,12 @@ int HamlibTransceiver::do_start ()
   CAT_TRACE ("starting: " << rig_get_caps_cptr (m_->model_, RIG_CAPS_MFG_NAME_CPTR)
              << ": " << rig_get_caps_cptr (m_->model_, RIG_CAPS_MODEL_NAME_CPTR));
 
+  token_t token = rig_token_lookup (m_->rig_.data (), "client");
+  if (RIG_CONF_END != token)	// only set if valid for rig model
+  {
+    rig_set_conf (m_->rig_.data (), token, "WSJTX");
+  }
+
   m_->error_check (rig_open (m_->rig_.data ()), tr ("opening connection to rig"));
 
   // reset dynamic state
@@ -659,7 +665,7 @@ int HamlibTransceiver::do_start ()
       rmode_t mb;
       pbwidth_t w {RIG_PASSBAND_NORMAL};
       pbwidth_t wb;
-      if (m_->freq_query_works_
+      if (m_->freq_query_works_ && m_->mode_query_works_
           && (!m_->get_vfo_works_ || !rig_get_function_ptr (m_->model_, RIG_FUNCTION_GET_VFO)))
         {
           // Icom have deficient CAT protocol with no way of reading which
@@ -760,7 +766,7 @@ int HamlibTransceiver::do_start ()
 
           m_->reversed_ = RIG_VFO_B == v;
 
-          if (m_->mode_query_works_ && !(rig_get_caps_int (m_->model_, RIG_CAPS_TARGETABLE_VFO) & (RIG_TARGETABLE_MODE | RIG_TARGETABLE_PURE)))
+          if (m_->mode_query_works_ && !(rig_get_caps_int (m_->model_, RIG_CAPS_TARGETABLE_VFO) & RIG_TARGETABLE_MODE))
             {
               if (RIG_OK == rig_get_mode (m_->rig_.data (), RIG_VFO_CURR, &m, &w))
                 {
@@ -911,9 +917,9 @@ void HamlibTransceiver::do_frequency (Frequency f, MODE m, bool no_ignore)
               // to frequency such as the TS-2000 auto mode setting
               CAT_TRACE ("rig_set_mode mode=" << rig_strrmode (new_mode));
               m_->error_check (rig_set_mode (m_->rig_.data (), target_vfo, new_mode, RIG_PASSBAND_NOCHANGE), tr ("setting current VFO mode"));
-              // set mode on VFOB too if we are in split
-              if (state ().split()) rig_set_mode (m_->rig_.data (), RIG_VFO_B, new_mode, RIG_PASSBAND_NOCHANGE), tr ("setting VFOB mode");
             }
+          // set mode on VFOB too if we are in split
+          if (state ().split()) rig_set_mode (m_->rig_.data (), RIG_VFO_B, new_mode, RIG_PASSBAND_NOCHANGE), tr ("setting VFOB mode");
           update_mode (m);
         }
     }
@@ -1147,7 +1153,7 @@ void HamlibTransceiver::do_poll ()
 
       if ((WSJT_RIG_NONE_CAN_SPLIT || !m_->is_dummy_)
           && state ().split ()
-          && (rig_get_caps_int (m_->model_, RIG_CAPS_TARGETABLE_VFO) & (RIG_TARGETABLE_FREQ | RIG_TARGETABLE_PURE))
+          && (rig_get_caps_int (m_->model_, RIG_CAPS_TARGETABLE_VFO) & RIG_TARGETABLE_FREQ)
           && !m_->one_VFO_)
         {
           // only read "other" VFO if in split, this allows rigs like

@@ -6,6 +6,8 @@
 //
 // Reports will be sent in batch mode every 5 minutes.
 
+#include <fstream>
+#include <iostream>
 #include <cmath>
 #include <QObject>
 #include <QString>
@@ -18,6 +20,7 @@
 #include <QByteArray>
 #include <QDataStream>
 #include <QTimer>
+#include <QDir>
 #if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
 #include <QRandomGenerator>
 #endif
@@ -29,18 +32,25 @@
 
 #include "moc_PSKReporter.cpp"
 
+#define DEBUGECLIPSE 0
+
 namespace
 {
   QLatin1String HOST {"report.pskreporter.info"};
   // QLatin1String HOST {"127.0.0.1"};
   quint16 SERVICE_PORT {4739};
   // quint16 SERVICE_PORT {14739};
-  int MIN_SEND_INTERVAL {15}; // in seconds
-  int FLUSH_INTERVAL {4 * 5}; // in send intervals
+  int MIN_SEND_INTERVAL {120}; // in seconds
+  int FLUSH_INTERVAL {MIN_SEND_INTERVAL + 5}; // in send intervals
   bool ALIGNMENT_PADDING {true};
   int MIN_PAYLOAD_LENGTH {508};
-  int MAX_PAYLOAD_LENGTH {1400};
+  int MAX_PAYLOAD_LENGTH {10000};
+  int CACHE_TIMEOUT {300}; // default to 5 minutes for repeating spots
+  QMap<QString, time_t> spot_cache;
 }
+
+static int added;
+static int removed;
 
 class PSKReporter::impl final
   : public QObject
@@ -83,6 +93,7 @@ public:
                                                          send_receiver_data_ = 3; // three times
                                                        }
                                                    });
+    eclipse_load(config->data_dir ().absoluteFilePath ("eclipse.txt"));
   }
 
   void check_connection ()
@@ -167,7 +178,7 @@ public:
 
     if (!report_timer_.isActive ())
       {
-        report_timer_.start (MIN_SEND_INTERVAL * 1000);
+        report_timer_.start (MIN_SEND_INTERVAL+1 * 1000); // we add 1 to give some more randomization
       }
     if (!descriptor_timer_.isActive ())
       {
@@ -188,6 +199,8 @@ public:
 
   void send_report (bool send_residue = false);
   void build_preamble (QDataStream&);
+  void eclipse_load(QString filename);
+  bool eclipse_active(QDateTime now = QDateTime::currentDateTime());
 
   bool flushing ()
   {
@@ -195,6 +208,14 @@ public:
     LOG_LOG_LOCATION (logger_, trace, "flush: " << flush);
     return flush;
   }
+
+  QString getStringFromQDateTime(const QString& dateTimeString, const QString& format)
+  {
+      QDateTime dateTime = QDateTime::fromString(dateTimeString, format);
+      return dateTime.toString();
+  }
+
+  QList<QDateTime> eclipseDates;
 
   logger_type mutable logger_;
   PSKReporter * self_;
@@ -217,6 +238,7 @@ public:
   QString rx_call_;
   QString rx_grid_;
   QString rx_ant_;
+  QString rigInformation_;
   QString prog_id_;
   QByteArray tx_data_;
   QByteArray tx_residue_;
@@ -270,6 +292,69 @@ namespace
     out << static_cast<quint16> (b.size ());
     out.device ()->seek (pos);
   }
+}
+
+bool PSKReporter::impl::eclipse_active(QDateTime timeutc) 
+{
+#ifdef DEBUGECLIPSE
+    std::ofstream mylog("/temp/eclipse.log", std::ios_base::app);
+#endif
+    QDateTime dateNow =  QDateTime::currentDateTimeUtc();
+    for (int i=0; i< eclipseDates.size(); ++i)
+    {
+        QDateTime check = eclipseDates.at(i); // already in UTC time
+        // +- 6 hour window
+		qint64 secondsDiff = qAbs(check.secsTo(dateNow));
+		if (secondsDiff <= 3600*6) // 6 hour check
+        {
+#ifdef DEBUGECLIPSE
+            mylog << dateNow.toString(Qt::ISODate) << " Eclipse! " << "secondsDiff=" << secondsDiff << std::endl;
+#endif
+            return true;
+        }
+    }
+#ifdef DEBUGECLIPSE
+    mylog << timeutc.toString("yyyy-MM-dd HH:mm:ss") << " no eclipse" << "\n";
+#endif
+    return false;
+}
+
+void PSKReporter::impl::eclipse_load(QString eclipse_file)
+{
+    std::ifstream fs(qPrintable(eclipse_file));
+    std::string mydate,mytime,myline;
+#ifdef DEBUGECLIPSE
+    std::ofstream mylog("c:/temp/eclipse.log");
+    mylog << "eclipse_file=" << eclipse_file << std::endl;
+#endif
+    if (fs.is_open())
+    {
+          while(!fs.eof())
+          {
+              std::getline(fs, myline);
+              if (myline[0] != '#' && myline.length() > 2)  // make sure to skip blank lines
+              {
+                  //QString format = "yyyy-MM-dd hh:mm:ss";
+                  QDateTime qdate = QDateTime::fromString(QString::fromStdString(myline), Qt::ISODate);
+				  QDateTime now = QDateTime::currentDateTimeUtc();
+				  // only add the date if we can cover the whole 12 hours
+				  //if (now < qdate.toUTC().addSecs(-3600*6))
+					eclipseDates.append(qdate);
+#ifdef DEBUGECLIPSE
+				//else
+				//  mylog << "not adding " << myline << std::endl;
+#endif
+	
+              }
+#ifdef DEBUGECLIPSE
+              mylog << myline << std::endl;
+#endif
+          }
+    }
+#ifdef DEBUGECLIPSE
+    if (eclipse_active(QDateTime::currentDateTime().toUTC())) mylog << "Eclipse is active" << std::endl;
+    else mylog << "Eclipse is not active" << std::endl;
+#endif
 }
 
 void PSKReporter::impl::build_preamble (QDataStream& message)
@@ -327,7 +412,7 @@ void PSKReporter::impl::build_preamble (QDataStream& message)
           << quint16 (3u)          // Options Template Set ID
           << quint16 (0u)          // Length (place-holder)
           << quint16 (0x50e2)      // Link ID
-          << quint16 (4u)          // Field Count
+          << quint16 (5u)          // Field Count
           << quint16 (0u)          // Scope Field Count
           << quint16 (0x8000 + 2u) // Option 1 Information Element ID (receiverCallsign)
           << quint16 (0xffff)      // Option 1 Field Length (variable)
@@ -340,6 +425,9 @@ void PSKReporter::impl::build_preamble (QDataStream& message)
           << quint32 (30351u)      // Option 3 Enterprise Number
           << quint16 (0x8000 + 9u) // Option 4 Information Element ID (antennaInformation)
           << quint16 (0xffff)      // Option 4 Field Length (variable)
+          << quint32 (30351u)      // Option 5 Enterprise Number
+          << quint16 (0x8000 + 13u)// Option 5 Information Element ID (rigInformation)
+          << quint16 (0xffff)      // Option 5 Field Length (variable)
           << quint32 (30351u);     // Option 4 Enterprise Number
         // insert Length
         set_length (out, descriptor);
@@ -366,6 +454,7 @@ void PSKReporter::impl::build_preamble (QDataStream& message)
     writeUtfString (out, rx_grid_);
     writeUtfString (out, prog_id_);
     writeUtfString (out, rx_ant_);
+    writeUtfString (out, rigInformation_);
 
     // insert Length and move to payload
     set_length (out, data);
@@ -516,7 +605,12 @@ void PSKReporter::reconnect ()
   m_->reconnect ();
 }
 
-void PSKReporter::setLocalStation (QString const& call, QString const& gridSquare, QString const& antenna)
+bool PSKReporter::eclipse_active(QDateTime now)
+{
+  return m_->eclipse_active(now);
+}
+
+void PSKReporter::setLocalStation (QString const& call, QString const& gridSquare, QString const& antenna, QString const& rigInformation)
 {
   LOG_LOG_LOCATION (m_->logger_, trace, "call: " << call << " grid: " << gridSquare << " ant: " << antenna);
   m_->check_connection ();
@@ -528,6 +622,7 @@ void PSKReporter::setLocalStation (QString const& call, QString const& gridSquar
       m_->rx_call_ = call;
       m_->rx_grid_ = gridSquare;
       m_->rx_ant_ = antenna;
+      m_->rigInformation_ = rigInformation;
     }
 }
 
@@ -542,7 +637,45 @@ bool PSKReporter::addRemoteStation (QString const& call, QString const& grid, Ra
         {
            reconnect ();
         }
-      m_->spots_.enqueue ({call, grid, snr, freq, mode, QDateTime::currentDateTimeUtc ()});
+      // remove any earlier spots of this call to reduce pskreporter load
+#ifdef DEBUGPSK
+      static std::fstream fs;
+      if (!fs.is_open()) fs.open("/temp/psk.log", std::fstream::in | std::fstream::out | std::fstream::app);
+#endif
+      added++;
+
+      QDateTime qdateNow = QDateTime::currentDateTime().toUTC();
+      // we allow all spots through +/- 6 hours around an eclipse for the HamSCI group
+      if (!spot_cache.contains(call) || freq > 49000000 || eclipse_active(qdateNow)) // then it's a new spot
+      {
+        m_->spots_.enqueue ({call, grid, snr, freq, mode, QDateTime::currentDateTimeUtc ()});
+        spot_cache.insert(call, time(NULL));
+#ifdef DEBUGPSK
+        if (fs.is_open()) fs << "Adding   " << call << " freq=" << freq << " " << spot_cache[call] <<  " count=" << m_->spots_.count() << std::endl;
+#endif
+      }
+      else if (time(NULL) - spot_cache[call] > CACHE_TIMEOUT) // then the cache has expired  
+      {
+        m_->spots_.enqueue ({call, grid, snr, freq, mode, QDateTime::currentDateTimeUtc ()});
+#ifdef DEBUGPSK
+        if (fs.is_open()) fs << "Adding # " << call << spot_cache[call] << " count=" << m_->spots_.count() << std::endl;
+#endif
+        spot_cache[call] = time(NULL);
+      }
+      else
+      {
+        removed++;
+#ifdef DEBUGPSK
+        if (fs.is_open()) fs << "Removing " << call << " " << time(NULL) << " reduction=" << removed/(double)added*100 << "%" << std::endl;
+#endif
+      }
+      // remove cached items over 10 minutes old to save a little memory
+      QMapIterator<QString, time_t> i(spot_cache);
+      time_t tmptime = time(NULL);
+      while(i.hasNext()) {
+          i.next();
+          if (tmptime - i.value() > 600) spot_cache.remove(i.key());
+      }
       return true;
     }
   return false;

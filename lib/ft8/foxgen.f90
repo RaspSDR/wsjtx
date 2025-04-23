@@ -1,4 +1,4 @@
-subroutine foxgen()
+subroutine foxgen(bSuperFox,fname)
 
   ! Called from MainWindow::foxTxSequencer() to generate the Tx waveform in
   ! FT8 Fox mode.  The Tx message can contain up to 5 "slots", each carrying
@@ -17,7 +17,10 @@ subroutine foxgen()
   parameter (NN=79,ND=58,NSPS=4*1920)
   parameter (NWAVE=(160+2)*134400*4) !the biggest waveform we generate (FST4-1800 at 48kHz)
   parameter (NFFT=614400,NH=NFFT/2)
-  character*40 cmsg
+  logical*1 bSuperFox,bMoreCQs,bSendMsg
+  character*(*) fname
+  character*40 cmsg,cmsg2
+  character*26 textMsg
   character*37 msg,msgsent
   integer itone(79)
   integer*1 msgbits(77),msgbits2
@@ -25,9 +28,25 @@ subroutine foxgen()
   real x(NFFT)
   real*8 dt,twopi,f0,fstep,dfreq,phi,dphi
   complex cx(0:NH)
-  common/foxcom/wave(NWAVE),nslots,nfreq,i3bit(5),cmsg(5),mycall(12)
+  common/foxcom/wave(NWAVE),nslots,nfreq,i3bit(5),cmsg(5),mycall(12),  &
+       textMsg,bMoreCQs,bSendMsg
   common/foxcom2/itone2(NN),msgbits2(77)
+  common/foxcom3/nslots2,cmsg2(5),itone3(151)
   equivalence (x,cx),(y,cy)
+
+  if(bSuperFox) then
+     n=nslots
+     if(bMoreCQs) cmsg(1)(40:40)='1'               !Set flag to include a CQ
+     if(bSendMsg) then
+        n=min(nslots+1,3)
+        cmsg(n)=textMsg
+        cmsg(n)(39:39)='1'                         !Set flag for text message
+        nslots=n
+     endif
+     nslots2=nslots
+     cmsg2=cmsg
+     go to 999
+  endif
 
   fstep=60.d0
   dfreq=6.25d0
@@ -66,7 +85,7 @@ subroutine foxgen()
   peak3=maxval(abs(wave))
   wave=wave/peak3
   
-  return
+999 return
 end subroutine foxgen
 
 ! include 'plotspec.f90'

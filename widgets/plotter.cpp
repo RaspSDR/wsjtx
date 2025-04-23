@@ -263,7 +263,7 @@ void CPlotter::draw(float swide[], bool bScroll, bool bRed)
     painter1.drawText (5, painter1.fontMetrics ().ascent (), t);
   }
 
-  if(m_mode=="JT4" or (m_mode=="Q65" and m_nSubMode>=2)) {
+  if(m_mode=="JT4" or (m_mode=="Q65" and m_nSubMode>=3)) {
     DrawOverlay();
     QPen pen3(Qt::yellow);                     //Mark freqs of JT4/Q65 single-tone msgs
     painter2D.setPen(pen3);
@@ -280,27 +280,28 @@ void CPlotter::draw(float swide[], bool bScroll, bool bRed)
     painter2D.drawText(x1-4,y,"73");
   }
 
-  if(bRed and m_bQ65_Sync) {      //Plot the Q65 red/orange sync curves
+  if(bRed and m_bQ65_Sync) {      //Plot the Q65 orange (current) and red (average) sync curves
     int k=0;
     int k2=0;
     std::ifstream f;
     f.open(m_redFile.toLatin1());
     if(f) {
       int x,y;
-      float freq,xdt,smin,smax,sync,sync2;
+      float freq,xdt,smin,smax,sync_avg,sync_current;
       f >> xdt >> smin >> smax;
       if(f) {
         for(int i=0; i<99999; i++) {
-          f >> freq >> sync >> sync2;
+          f >> freq >> sync_avg >> sync_current;
           if(!f or f.eof() or k>=MAX_SCREENSIZE or k2>=MAX_SCREENSIZE) break;
           x=XfromFreq(freq);
-          if(sync > -99.0 and (smin!=0.0 or smax != 0.0)) {
-            y=m_h2*(0.9 - 0.09*gain2d*sync) - m_plot2dZero - 10;
-            LineBuf2[k2].setX(x);                          //Red sync curve
+          // Plot the red curve only if we have averaged 2 or more Rx sequences.
+          if(sync_avg > -99.0 and (smin!=0.0 or smax != 0.0)) {
+            y=m_h2*(0.9 - 0.09*gain2d*gain2d*sync_avg) - m_plot2dZero - 10;
+            LineBuf2[k2].setX(x);                          //Red sync curve (average)
             LineBuf2[k2].setY(y);
             k2++;
           }
-          y=m_h2*(0.9 - 0.09*gain2d*sync2) - m_plot2dZero;
+          y=m_h2*(0.9 - 0.09*gain2d*gain2d*sync_current) - m_plot2dZero;
           LineBuf3[k].setX(x);                            //Orange sync curve
           LineBuf3[k].setY(y);
           k++;
@@ -482,7 +483,9 @@ void CPlotter::DrawOverlay()                   //DrawOverlay()
 
   float bw=9.0*12000.0/m_nsps;               //JT9
   if(m_mode=="FT4") bw=3*12000.0/576.0;      //FT4  ### (3x, or 4x???) ###
-  if(m_mode=="FT8") bw=7*12000.0/1920.0;     //FT8
+  if(m_mode=="FT8") {
+    bw=7*12000.0/1920.0;     //FT8
+  }
   if(m_mode.startsWith("FST4")) {
     int h=int(pow(2.0,m_nSubMode));
     int nsps=800;
@@ -584,7 +587,7 @@ void CPlotter::DrawOverlay()                   //DrawOverlay()
       painter0.drawLine(x2,25,x2-5,20);
     }
 
-    if(m_mode=="Q65" or (m_mode=="JT65" and m_bVHF)) {
+    if(m_mode=="Q65" or (m_mode=="JT65" and m_bVHF) or (m_mode=="FT8" and m_bSuperHound) ) {
       painter0.setPen(penGreen);
       x1=XfromFreq(m_rxFreq-m_tol);
       x2=XfromFreq(m_rxFreq+m_tol);
@@ -603,10 +606,11 @@ void CPlotter::DrawOverlay()                   //DrawOverlay()
       }
       painter0.setPen(penGreen);
       x6=XfromFreq(m_rxFreq+bw);             //Highest tone
+      if(m_mode=="FT8" and m_bSuperHound) x6=XfromFreq(m_rxFreq+1500.0);
       painter0.drawLine(x6,20,x6,26);
 
     } else {
-      // Draw the green "goal post"
+      // Draw the green goal post
       painter0.setPen(penGreen);
       x1=XfromFreq(m_rxFreq);
       x2=XfromFreq(m_rxFreq+bw);
@@ -626,12 +630,13 @@ void CPlotter::DrawOverlay()                   //DrawOverlay()
     painter0.setPen(penRed);
     x1=XfromFreq(m_txFreq);
     x2=XfromFreq(m_txFreq+bw);
+    if(m_bSuperFox) x2=XfromFreq(m_txFreq+1500.0);
     if(m_mode=="WSPR") {
       bw=4*12000.0/8192.0;                  //WSPR
       x1=XfromFreq(m_txFreq-0.5*bw);
       x2=XfromFreq(m_txFreq+0.5*bw);
     }
-    // Draw the red "goal post"
+    // Draw the red goal post
     painter0.drawLine(x1,yTxTop,x1,yTxTop+yh);
     painter0.drawLine(x1,yTxTop,x2,yTxTop);
     painter0.drawLine(x2,yTxTop,x2,yTxTop+yh);
@@ -882,6 +887,18 @@ void CPlotter::setFlatten(bool b1, bool b2)
   m_Flatten=0;
   if(b1) m_Flatten=1;
   if(b2) m_Flatten=2;
+}
+
+void CPlotter::setSuperFox(bool b)
+{
+  m_bSuperFox=b;
+  if(m_bSuperFox) m_bSuperHound=false;
+}
+
+void CPlotter::setSuperHound(bool b)
+{
+  m_bSuperHound=b;
+  if(m_bSuperHound) m_bSuperFox=false;
 }
 
 void CPlotter::setTol(int n)                                 //setTol()

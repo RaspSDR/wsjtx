@@ -19,7 +19,7 @@ public:
 
   void reconnect ();
 
-  void setLocalStation (QString const& call, QString const& grid, QString const& antenna);
+  void setLocalStation (QString const& call, QString const& grid, QString const& antenna, QString const& rigInformation);
 
   //
   // Returns false if PSK Reporter connection is not available
@@ -30,6 +30,10 @@ public:
   // Flush any pending spots to PSK Reporter
   //
   void sendReport (bool last = false);
+
+  //
+  // True if current time falls withing a +/- window of a solar eclipse for HamSCI use
+  bool eclipse_active(QDateTime now);
 
   Q_SIGNAL void errorOccurred (QString const& reason);
 
